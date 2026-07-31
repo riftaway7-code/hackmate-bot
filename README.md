@@ -2,6 +2,8 @@
 
 Discord bot for querying [hackmate-hwdb](https://github.com/riftaway7-code/hackmate-hwdb) live.
 
+Deployed as a Cloudflare Worker (`worker/`) using Discord's HTTP Interactions model — no persistent gateway connection, fits the free plan. A gateway-based Python version (`bot.py`) is also included for anyone who'd rather self-host with `discord.py`.
+
 ## Commands
 
 - `/hwdb branch codename:<...> feature:<...> device:<optional>` — reads committed logs from the `main` branch. Omit `device` to list what's on file for that codename/feature.
@@ -9,26 +11,36 @@ Discord bot for querying [hackmate-hwdb](https://github.com/riftaway7-code/hackm
 
 `codename` and `feature` are autocompleted/dropdown — they match the real folder names in the hwdb repo (`intel-gen2`...`intel-gen15`, `amd-zen`...`amd-zen5`, `full-build-logs`, `dual-boot-logs`, etc). `device` takes a Mac model like `iMac19,1` or `MacBookPro15,2` and is slugified to match the repo's filename convention.
 
-## Environment variables
+## Cloudflare Worker (deployed)
 
-- `DISCORD_TOKEN` — required, from the Discord Developer Portal (Bot tab).
-- `GITHUB_TOKEN` — optional but recommended. Without it, GitHub API calls are limited to 60/hour per IP; a classic PAT with no scopes (public repo read only) raises that to 5000/hour.
+`worker/index.js` — single-file Worker, no npm dependencies. Verifies each interaction's Ed25519 signature using the Web Crypto API directly.
 
-## Run locally
+Secrets (Worker Settings → Variables and secrets):
+- `DISCORD_PUBLIC_KEY` — required. From the Developer Portal's General Information page.
+- `GITHUB_TOKEN` — optional. Without it, GitHub API calls are limited to 60/hour per IP; a classic PAT with no scopes (public repo read only) raises that to 5000/hour.
+
+Set the app's **Interactions Endpoint URL** (General Information page) to the deployed Worker's URL — Discord sends a PING to verify it immediately on save.
+
+Register the `/hwdb` command once (or after changing its definition):
+
+```bash
+cd worker
+DISCORD_APPLICATION_ID=... DISCORD_TOKEN=... node register-commands.js
+```
+
+## Alternative: Python gateway bot (`bot.py`)
 
 ```bash
 pip install -r requirements.txt
 DISCORD_TOKEN=... GITHUB_TOKEN=... python bot.py
 ```
 
-## Deploy
-
-Dockerfile included — deploy as-is to Railway, Fly.io, or any container host. Set `DISCORD_TOKEN` (and optionally `GITHUB_TOKEN`) as environment variables on the host.
+Needs a host that keeps a process running continuously (Railway, Fly.io, your own server) — unlike the Worker, this maintains a persistent gateway connection. Dockerfile included.
 
 ## Invite the bot
 
 ```
-https://discord.com/oauth2/authorize?client_id=YOUR_APP_ID&scope=bot+applications.commands&permissions=83968
+https://discord.com/oauth2/authorize?client_id=1532539622934970499&scope=bot+applications.commands&permissions=83968
 ```
 
 Permissions: Send Messages, Embed Links, Read Message History.

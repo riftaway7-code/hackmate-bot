@@ -1,0 +1,7 @@
+name = "hackmate-hwdb-bot"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+# Set as secrets (wrangler secret put NAME, or via the dashboard):
+#   DISCORD_PUBLIC_KEY
+#   GITHUB_TOKEN (optional, raises GitHub API rate limit from 60/hr to 5000/hr)
