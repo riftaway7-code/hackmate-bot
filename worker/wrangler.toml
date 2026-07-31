@@ -2,6 +2,10 @@ name = "hackmate-hwdb-bot"
 main = "index.js"
 compatibility_date = "2024-09-23"
 
+kv_namespaces = [
+  { binding = "RATE_LIMIT_KV", id = "fb6b2b22ddbe4a8f86fa270cb7ca0226" }
+]
+
 # Set as secrets (wrangler secret put NAME, or via the dashboard):
 #   DISCORD_PUBLIC_KEY
-#   GITHUB_TOKEN (optional, raises GitHub API rate limit from 60/hr to 5000/hr)
+#   GITHUB_TOKEN (write access to the hackmate repo's Issues, for /issueopen)

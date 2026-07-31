@@ -1,8 +1,6 @@
 const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;
 const TOKEN = process.env.DISCORD_TOKEN;
 
-const CODENAME_CHOICES_NOTE = "autocompleted at runtime";
-
 const deviceOption = {
   type: 3,
   name: "device",
@@ -67,6 +65,40 @@ const command = {
   ],
 };
 
+const issueOpenCommand = {
+  name: "issueopen",
+  description: "Report a bug/issue on the hackmate repo",
+  options: [
+    {
+      type: 3,
+      name: "title",
+      description: "Short title for the issue",
+      required: true,
+      max_length: 100,
+    },
+    {
+      type: 3,
+      name: "description",
+      description: "Describe the issue",
+      required: true,
+      max_length: 4000,
+    },
+    {
+      type: 3,
+      name: "hardware_text",
+      description: "Hardware info as text (optional)",
+      required: false,
+      max_length: 1000,
+    },
+    {
+      type: 11,
+      name: "hardware_image",
+      description: "Hardware screenshot/photo (optional)",
+      required: false,
+    },
+  ],
+};
+
 async function main() {
   if (!APPLICATION_ID || !TOKEN) {
     console.error("Set DISCORD_APPLICATION_ID and DISCORD_TOKEN env vars first.");
@@ -80,7 +112,7 @@ async function main() {
         Authorization: `Bot ${TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify([command]),
+      body: JSON.stringify([command, issueOpenCommand]),
     }
   );
   const data = await res.json();
@@ -88,7 +120,7 @@ async function main() {
     console.error("Failed:", res.status, data);
     process.exit(1);
   }
-  console.log("Registered /hwdb command:", JSON.stringify(data, null, 2));
+  console.log("Registered commands:", JSON.stringify(data, null, 2));
 }
 
 main();

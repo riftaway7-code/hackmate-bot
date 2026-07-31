@@ -8,6 +8,7 @@ Deployed as a Cloudflare Worker (`worker/`) using Discord's HTTP Interactions mo
 
 - `/hwdb branch codename:<...> feature:<...> device:<optional>` — reads committed logs from the `main` branch. Omit `device` to list what's on file for that codename/feature.
 - `/hwdb issues codename:<...> feature:<...> device:<optional> state:<open|closed|all>` — searches raw GitHub Issues (one per auto-submission).
+- `/issueopen title:<...> description:<...> hardware_text:<optional> hardware_image:<optional>` — opens an issue on the main `hackmate` repo (not hwdb) reporting a bug. The issue is created under the repo owner's GitHub token, but the body always states which Discord user submitted it via the bot. Rate-limited to one submission per user per 10 minutes.
 
 `codename` and `feature` are autocompleted/dropdown — they match the real folder names in the hwdb repo (`intel-gen2`...`intel-gen15`, `amd-zen`...`amd-zen5`, `full-build-logs`, `dual-boot-logs`, etc). `device` takes a Mac model like `iMac19,1` or `MacBookPro15,2` and is slugified to match the repo's filename convention.
 
@@ -17,15 +18,25 @@ Deployed as a Cloudflare Worker (`worker/`) using Discord's HTTP Interactions mo
 
 Secrets (Worker Settings → Variables and secrets):
 - `DISCORD_PUBLIC_KEY` — required. From the Developer Portal's General Information page.
-- `GITHUB_TOKEN` — optional. Without it, GitHub API calls are limited to 60/hour per IP; a classic PAT with no scopes (public repo read only) raises that to 5000/hour.
+- `GITHUB_TOKEN` — required for `/issueopen`, optional otherwise. A fine-grained PAT scoped to just the `hackmate` repo with Issues: Read-and-write raises the GitHub API rate limit to 5000/hour and lets the bot open issues.
+
+Bindings:
+- `RATE_LIMIT_KV` — a Workers KV namespace, used to cap `/issueopen` to one submission per Discord user per 10 minutes.
 
 Set the app's **Interactions Endpoint URL** (General Information page) to the deployed Worker's URL — Discord sends a PING to verify it immediately on save.
 
-Register the `/hwdb` command once (or after changing its definition):
+Register the slash commands once (or after changing their definitions):
 
 ```bash
 cd worker
 DISCORD_APPLICATION_ID=... DISCORD_TOKEN=... node register-commands.js
+```
+
+Deploy code changes:
+
+```bash
+cd worker
+wrangler deploy
 ```
 
 ## Alternative: Python gateway bot (`bot.py`)

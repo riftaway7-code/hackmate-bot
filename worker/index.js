@@ -1,4 +1,5 @@
-const REPO = "riftaway7-code/hackmate-hwdb";
+const HWDB_REPO = "riftaway7-code/hackmate-hwdb";
+const HACKMATE_REPO = "riftaway7-code/hackmate";
 const GITHUB_API = "https://api.github.com";
 
 const FEATURE_LABELS = {
@@ -66,7 +67,7 @@ async function handleBranch(options, env) {
   if (device) {
     const slug = slugify(device);
     const res = await fetch(
-      `${GITHUB_API}/repos/${REPO}/contents/${folder}/${slug}.log`,
+      `${GITHUB_API}/repos/${HWDB_REPO}/contents/${folder}/${slug}.log`,
       { headers: githubHeaders(env) }
     );
     if (res.ok) {
@@ -77,7 +78,7 @@ async function handleBranch(options, env) {
         embeds: [{
           title: `${device} — ${featureLabel} — ${codenameLabel}`,
           description: "```\n" + preview + "\n```" + (content.length > 1500 ? "\n...(truncated, see link)" : ""),
-          url: `https://github.com/${REPO}/blob/main/${folder}/${slug}.log`,
+          url: `https://github.com/${HWDB_REPO}/blob/main/${folder}/${slug}.log`,
           color: 0x5865f2,
         }],
       };
@@ -87,7 +88,7 @@ async function handleBranch(options, env) {
     };
   }
 
-  const res = await fetch(`${GITHUB_API}/repos/${REPO}/contents/${folder}`, { headers: githubHeaders(env) });
+  const res = await fetch(`${GITHUB_API}/repos/${HWDB_REPO}/contents/${folder}`, { headers: githubHeaders(env) });
   if (!res.ok) {
     return { content: `Nothing found for \`${folder}\` (status ${res.status}).` };
   }
@@ -101,7 +102,7 @@ async function handleBranch(options, env) {
     embeds: [{
       title: `${featureLabel} — ${codenameLabel}`,
       description: files.slice(0, 40).map((f) => `• ${f}`).join("\n"),
-      url: `https://github.com/${REPO}/tree/main/${folder}`,
+      url: `https://github.com/${HWDB_REPO}/tree/main/${folder}`,
       color: 0x5865f2,
       footer: { text: `${files.length} device(s) on file — pass device: to view one directly` },
     }],
@@ -116,7 +117,7 @@ async function handleIssues(options, env) {
   const featureLabel = FEATURE_LABELS[feature] || feature;
   const codenameLabel = CODENAME_LABELS[codename] || codename;
 
-  const queryParts = [`repo:${REPO}`, "is:issue", `"${feature}/${codename}"`];
+  const queryParts = [`repo:${HWDB_REPO}`, "is:issue", `"${feature}/${codename}"`];
   if (state !== "all") queryParts.push(`state:${state}`);
   if (device) queryParts.push(`"${slugify(device)}"`);
   const query = queryParts.join(" ");
@@ -154,7 +155,93 @@ function autocompleteCodename(current) {
   return matches.slice(0, 25).map(([key, label]) => ({ name: label, value: key }));
 }
 
-export { slugify, handleBranch, handleIssues, autocompleteCodename };
+async function createGithubIssue(env, title, body, labels) {
+  const res = await fetch(`${GITHUB_API}/repos/${HACKMATE_REPO}/issues`, {
+    method: "POST",
+    headers: { ...githubHeaders(env), "Content-Type": "application/json" },
+    body: JSON.stringify({ title, body, labels }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`GitHub issue creation failed (${res.status}): ${errText.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+async function handleIssueOpen(interaction, env) {
+  const options = interaction.data.options || [];
+  const title = getOption(options, "title");
+  const description = getOption(options, "description");
+  const hardwareText = getOption(options, "hardware_text");
+  const hardwareAttachmentId = getOption(options, "hardware_image");
+
+  const discordUser = interaction.member?.user || interaction.user;
+  const discordId = discordUser?.id;
+  const discordTag = discordUser?.username ? `@${discordUser.username}` : "an unknown Discord user";
+
+  if (!discordId) {
+    return { content: "Could not identify the reporting user — try again from inside the server." };
+  }
+
+  if (env.RATE_LIMIT_KV) {
+    const key = `issueopen:${discordId}`;
+    const existing = await env.RATE_LIMIT_KV.get(key);
+    if (existing) {
+      return { content: "You can only open one report every 10 minutes — please wait before submitting another." };
+    }
+  }
+
+  let hardwareImageUrl = null;
+  if (hardwareAttachmentId) {
+    const attachment = interaction.data.resolved?.attachments?.[hardwareAttachmentId];
+    hardwareImageUrl = attachment?.url || null;
+  }
+
+  const bodyLines = [
+    `**Reported via the hackmate Discord bot by ${discordTag}** (Discord ID: ${discordId})`,
+    "",
+    description,
+  ];
+  if (hardwareText) {
+    bodyLines.push("", "**Hardware:**", hardwareText);
+  }
+  if (hardwareImageUrl) {
+    bodyLines.push("", "**Hardware image:**", hardwareImageUrl);
+  }
+  bodyLines.push(
+    "",
+    "---",
+    "_This issue was opened automatically via the hackmate Discord bot — not directly by the repo owner._"
+  );
+
+  let issue;
+  try {
+    issue = await createGithubIssue(
+      env,
+      `[user-report] ${title}`,
+      bodyLines.join("\n"),
+      ["user-reported", "via-discord-bot"]
+    );
+  } catch (e) {
+    return { content: `Couldn't open the issue: ${e.message}` };
+  }
+
+  if (env.RATE_LIMIT_KV) {
+    await env.RATE_LIMIT_KV.put(`issueopen:${discordId}`, "1", { expirationTtl: 600 });
+  }
+
+  return {
+    embeds: [{
+      title: `Issue opened: #${issue.number}`,
+      description: title,
+      url: issue.html_url,
+      color: 0x2ea44f,
+      footer: { text: `Reported by ${discordTag}` },
+    }],
+  };
+}
+
+export { slugify, handleBranch, handleIssues, autocompleteCodename, handleIssueOpen };
 
 export default {
   async fetch(request, env) {
@@ -175,26 +262,42 @@ export default {
     }
 
     if (interaction.type === 4) {
-      const focused = (interaction.data.options?.[0]?.options || []).find((o) => o.focused);
-      const choices = focused && focused.name === "codename" ? autocompleteCodename(focused.value) : [];
-      return Response.json({ type: 8, data: { choices } });
+      if (interaction.data.name === "hwdb") {
+        const focused = (interaction.data.options?.[0]?.options || []).find((o) => o.focused);
+        const choices = focused && focused.name === "codename" ? autocompleteCodename(focused.value) : [];
+        return Response.json({ type: 8, data: { choices } });
+      }
+      return Response.json({ type: 8, data: { choices: [] } });
     }
 
     if (interaction.type === 2) {
-      const sub = interaction.data.options?.[0];
-      const options = sub?.options || [];
+      const commandName = interaction.data.name;
       let payload;
-      try {
-        if (sub?.name === "branch") {
-          payload = await handleBranch(options, env);
-        } else if (sub?.name === "issues") {
-          payload = await handleIssues(options, env);
-        } else {
-          payload = { content: "Unknown subcommand." };
+
+      if (commandName === "hwdb") {
+        const sub = interaction.data.options?.[0];
+        const options = sub?.options || [];
+        try {
+          if (sub?.name === "branch") {
+            payload = await handleBranch(options, env);
+          } else if (sub?.name === "issues") {
+            payload = await handleIssues(options, env);
+          } else {
+            payload = { content: "Unknown subcommand." };
+          }
+        } catch (e) {
+          payload = { content: `Error: ${e.message}` };
         }
-      } catch (e) {
-        payload = { content: `Error: ${e.message}` };
+      } else if (commandName === "issueopen") {
+        try {
+          payload = await handleIssueOpen(interaction, env);
+        } catch (e) {
+          payload = { content: `Error: ${e.message}` };
+        }
+      } else {
+        payload = { content: "Unknown command." };
       }
+
       return Response.json({ type: 4, data: payload });
     }
 
